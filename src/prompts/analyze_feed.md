@@ -1,0 +1,1 @@
+Identify the first visible moments post. Find the 'Time' label, the 'User Name', and the position of the 'Two Dots' (Like/Comment menu) button. Return JSON: { hasPost: boolean, postUser: string, likeButton: {x, y} }

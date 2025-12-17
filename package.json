@@ -1,0 +1,32 @@
+{
+  "name": "wechat-agent",
+  "version": "1.0.0",
+  "description": "<div align=\"center\">",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "ts-node src/index.ts",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^25.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@types/uuid": "^10.0.0",
+    "clipboardy": "^5.0.2",
+    "node-window-manager": "^2.2.4",
+    "robotjs": "^0.6.0",
+    "sharp": "^0.34.5",
+    "uuid": "^13.0.0",
+    "zhipuai": "^2.0.0"
+  }
+}

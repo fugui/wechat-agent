@@ -13,7 +13,7 @@
   - **描述**: 切换到主标签页。
   - **参数**: `target` (string) - 选项: "chat" (微信), "contacts" (通讯录), "moments" (朋友圈/发现), "favorites" (收藏)。
 
-### 2. 聊天与搜索 (Chat & Search)
+### 2. 发送消息 (Send Message)
 
 - **search_contact**
   - **描述**: 在顶部搜索栏中搜索联系人、群组或聊天记录。
@@ -26,6 +26,9 @@
   - **参数**: `content` (string) - 输入内容。
 - **click_send**
   - **描述**: 点击“发送”按钮以发送已输入的文字。
+  - **参数**: 无 (None)。
+- **check_sent_messages**
+  - **描述**: 检查聊天窗口中的已发送消息， 确认是否成功发送。
   - **参数**: 无 (None)。
 
 ### 3. 获取联系人最近的聊天记录 （Get Contact Chat Records）

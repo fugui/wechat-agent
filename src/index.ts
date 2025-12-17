@@ -1,6 +1,3 @@
-import { ScreenCapturer } from "./core/screen_capturer";
-import { AIClient } from "./core/ai_client";
-import { RobotService } from "./core/robot_service";
 import fs from "fs";
 import path from "path";
 
@@ -15,8 +12,6 @@ function loadConfig() {
 }
 
 import { AgentCore } from "./core/agent_core";
-
-// ... existing imports ...
 
 async function main() {
   try {

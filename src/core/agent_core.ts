@@ -45,49 +45,60 @@ export class AgentCore {
     console.log(`🚀 Agent starting with instruction: "${instruction}"`);
 
     try {
-      // 1. Plan
-      console.log("WAITING for Plan...");
-      const steps = await this.planner.plan(instruction);
-      const task = this.taskManager.createTask(instruction, steps);
-      console.log(`📝 Plan created with ${steps.length} steps.`);
-      console.log(JSON.stringify(steps, null, 2));
+      // 1. Create Initial Task (Self-Expanding via a 'plan' step)
+      const initialSteps = [
+        {
+          type: "plan",
+          description: `生成初步计划: ${instruction}`,
+          params: { instruction },
+        },
+      ];
+      const task = this.taskManager.createTask(instruction, initialSteps);
+      console.log(`📝 Task initialized with Goal: "${instruction}"`);
 
-      // 2. Loop
+      // 2. Main Orchestration Loop
+      // The task manager will be dynamically updated as steps are executed.
       while (!this.taskManager.isTaskComplete()) {
         const step = this.taskManager.getCurrentStep();
         if (!step) break;
 
+        const stepNum = task.currentStepIndex + 1;
+        const totalSteps = task.steps.length;
         console.log(
-          `\n▶ [Step ${task.currentStepIndex + 1}/${
-            task.steps.length
-          }] Executing: ${step.type}`
+          `\n▶ [Step ${stepNum}/${totalSteps}] Executing: ${step.type}`
         );
         console.log(`   Desc: ${step.description}`);
-        console.log(`   Params:`, step.params);
+        if (step.params && Object.keys(step.params).length > 0) {
+          console.log(`   Params:`, step.params);
+        }
 
         // Capture state (Context)
-        // Ideally we check if we are on the right screen, but for Phase 3 simple loop, we just adjust window
         await this.capturer.adjustWindow();
 
-        // Execute
+        // Execute step
         try {
           await this.executeStep(step);
 
-          // Verification (Optional for now, but simple delay helps)
+          // Success: Mark complete and advance to next (possibly new) step
           console.log("   ✅ Step success");
           this.taskManager.completeCurrentStep(true);
-        } catch (e) {
-          console.error("   ❌ Step failed:", e);
+        } catch (e: any) {
+          console.error("   ❌ Step failed:", e.message || e);
           this.taskManager.completeCurrentStep(false, e);
-          break; // Stop on failure
+          break; // Usually stop on failure in a multi-step task
         }
 
-        // Delay between steps
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Small delay between steps to allow UI to breathe
+        await new Promise((resolve) =>
+          setTimeout(resolve, UI_CONSTANTS.DELAY_STEP)
+        );
       }
 
-      const finalStatus = this.taskManager.getCurrentTask()?.status;
-      console.log(`🏁 Task finished with status: ${finalStatus}`);
+      const finalTask = this.taskManager.getCurrentTask();
+      console.log(`\n🏁 Task finished with status: ${finalTask?.status}`);
+      if (finalTask?.status === "completed") {
+        console.log("🎉 All steps executed successfully.");
+      }
     } catch (error) {
       console.error("💥 Agent Start Error:", error);
     }
@@ -129,6 +140,14 @@ export class AgentCore {
 
       case "get_contact_chat_records":
         await this.handleGetContactChatRecords();
+        break;
+
+      case "plan":
+        await this.handlePlan(step);
+        break;
+
+      case "analyze":
+        await this.handleAnalyze(step);
         break;
 
       default:
@@ -192,19 +211,23 @@ export class AgentCore {
   }
 
   private async handleClickSend() {
-    await this.robot.tap(770, 680);
+    await this.robot.tap(
+      UI_CONSTANTS.SEND_BUTTON.x,
+      UI_CONSTANTS.SEND_BUTTON.y
+    );
   }
 
   private async handleNavigateTo(step: TaskStep) {
-    const map: Record<string, [number, number]> = {
-      chat: [36, 90],
-      contacts: [36, 140],
-      moments: [36, 240],
+    const map: Record<string, { x: number; y: number }> = {
+      chat: UI_CONSTANTS.NAV_CHAT,
+      contacts: UI_CONSTANTS.NAV_CONTACTS,
+      moments: UI_CONSTANTS.NAV_MOMENTS,
+      favorites: UI_CONSTANTS.NAV_FAVORITES,
     };
     const target = step.params?.target as string;
     if (target && map[target]) {
       const coords = map[target];
-      await this.robot.tap(coords[0], coords[1]);
+      await this.robot.tap(coords.x, coords.y);
     } else {
       console.warn(`Unknown navigation target: ${target}`);
     }
@@ -298,5 +321,49 @@ export class AgentCore {
       "      📄 Extracted Records:",
       JSON.stringify(recordAnalysis, null, 2)
     );
+  }
+
+  private async handlePlan(step: TaskStep) {
+    const instruction = step.params?.instruction || step.description;
+    console.log(`   🧠 Planning sub-steps for: "${instruction}"...`);
+
+    // Call the text-based planner
+    const subSteps = await this.planner.plan(instruction);
+
+    if (subSteps && subSteps.length > 0) {
+      console.log(`      ➕ Inserting ${subSteps.length} planned steps.`);
+      this.taskManager.insertNextSteps(subSteps);
+    } else {
+      console.log("      ⚠️ No steps generated for this plan.");
+    }
+  }
+
+  private async handleAnalyze(step: TaskStep) {
+    const instruction = step.params?.instruction || step.description;
+    console.log(`   🧠 Analyzing screen with instruction: "${instruction}"...`);
+
+    const screenshot = await this.capturer.captureLeftScreen();
+    const result = await this.aiClient.analyzeImage(screenshot, instruction);
+
+    console.log("   🤔 AI Analysis Result:");
+    console.log(JSON.stringify(result, null, 2));
+
+    // If the vision analysis suggests concrete steps (action_suggestion), insert them!
+    if (result.action_suggestion && result.action_suggestion.steps) {
+      const nextSteps = result.action_suggestion.steps
+        .filter((s: any) => s.action && s.action !== "END")
+        .map((s: any) => ({
+          type: s.action,
+          params: s,
+          description: s.description || ` visión suggested ${s.action}`,
+        }));
+
+      if (nextSteps.length > 0) {
+        console.log(
+          `      ➕ Adding ${nextSteps.length} vision-suggested steps to the task.`
+        );
+        this.taskManager.insertNextSteps(nextSteps);
+      }
+    }
   }
 }

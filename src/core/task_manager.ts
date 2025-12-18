@@ -65,6 +65,32 @@ export class TaskManager {
     }
   }
 
+  /**
+   * Insert new steps immediately after the current step
+   */
+  public insertNextSteps(newSteps: Omit<TaskStep, "id" | "status">[]) {
+    if (!this.currentTask) return;
+
+    const steps: TaskStep[] = newSteps.map((s) => ({
+      ...s,
+      id: uuidv4(),
+      status: "pending",
+    }));
+
+    // Calculate insertion index: currentStepIndex is already advanced if completeCurrentStep was called,
+    // or if we are IN handles, currentStepIndex is the one we ARE executing.
+    // Actually, completeCurrentStep increments currentStepIndex.
+    // So if we call this AFTER completeCurrentStep, currentStepIndex is the next step to run.
+    // Let's insert at the current cursor position.
+    const insertionIndex = this.currentTask.currentStepIndex;
+    this.currentTask.steps.splice(insertionIndex, 0, ...steps);
+
+    // Reset status if it was completed
+    if (this.currentTask.status === "completed") {
+      this.currentTask.status = "running";
+    }
+  }
+
   public isTaskComplete(): boolean {
     if (!this.currentTask) return true; // No task = nothing to do
     return (

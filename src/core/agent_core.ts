@@ -1,5 +1,4 @@
 import { TaskManager } from "./task_manager";
-import { TaskPlanner } from "./task_planner";
 import { ScreenCapturer } from "./screen_capturer";
 import { RobotService } from "./robot_service";
 import { AIClient } from "./ai_client";
@@ -11,7 +10,6 @@ const path = require("path");
 
 export class AgentCore {
   private taskManager: TaskManager;
-  private planner: TaskPlanner;
   private capturer: ScreenCapturer;
   private aiClient: AIClient;
   private robot: RobotService;
@@ -19,7 +17,6 @@ export class AgentCore {
   constructor(config: any) {
     this.aiClient = new AIClient(config.api);
     this.taskManager = new TaskManager();
-    this.planner = new TaskPlanner(this.aiClient);
     this.capturer = new ScreenCapturer();
     this.robot = RobotService.getInstance();
   }
@@ -45,19 +42,21 @@ export class AgentCore {
     console.log(`🚀 Agent starting with instruction: "${instruction}"`);
 
     try {
-      // 1. Create Initial Task (Self-Expanding via a 'plan' step)
+      // 1. Initialize with an 'analyze' step.
+      // This merges Planning and Vision into a single "Observe & Think" loop.
       const initialSteps = [
         {
-          type: "plan",
-          description: `生成初步计划: ${instruction}`,
+          type: "analyze",
+          description: `分析当前状态并开始任务: ${instruction}`,
           params: { instruction },
         },
       ];
       const task = this.taskManager.createTask(instruction, initialSteps);
-      console.log(`📝 Task initialized with Goal: "${instruction}"`);
+      console.log(
+        `📝 Task initialized. Visual intelligence will guide the process.`
+      );
 
       // 2. Main Orchestration Loop
-      // The task manager will be dynamically updated as steps are executed.
       while (!this.taskManager.isTaskComplete()) {
         const step = this.taskManager.getCurrentStep();
         if (!step) break;
@@ -68,27 +67,22 @@ export class AgentCore {
           `\n▶ [Step ${stepNum}/${totalSteps}] Executing: ${step.type}`
         );
         console.log(`   Desc: ${step.description}`);
-        if (step.params && Object.keys(step.params).length > 0) {
-          console.log(`   Params:`, step.params);
-        }
 
-        // Capture state (Context)
+        // Capture state & adjust window before every step to ensure accuracy
         await this.capturer.adjustWindow();
 
         // Execute step
         try {
           await this.executeStep(step);
-
-          // Success: Mark complete and advance to next (possibly new) step
           console.log("   ✅ Step success");
           this.taskManager.completeCurrentStep(true);
         } catch (e: any) {
           console.error("   ❌ Step failed:", e.message || e);
           this.taskManager.completeCurrentStep(false, e);
-          break; // Usually stop on failure in a multi-step task
+          break;
         }
 
-        // Small delay between steps to allow UI to breathe
+        // Delay between steps
         await new Promise((resolve) =>
           setTimeout(resolve, UI_CONSTANTS.DELAY_STEP)
         );
@@ -96,9 +90,6 @@ export class AgentCore {
 
       const finalTask = this.taskManager.getCurrentTask();
       console.log(`\n🏁 Task finished with status: ${finalTask?.status}`);
-      if (finalTask?.status === "completed") {
-        console.log("🎉 All steps executed successfully.");
-      }
     } catch (error) {
       console.error("💥 Agent Start Error:", error);
     }
@@ -142,20 +133,33 @@ export class AgentCore {
         await this.handleGetContactChatRecords();
         break;
 
-      case "plan":
-        await this.handlePlan(step);
-        break;
-
       case "analyze":
         await this.handleAnalyze(step);
         break;
 
-      default:
-        console.warn("Unknown step type:", step.type);
-        // Fallback
-        if (step.type === "tap" && step.params?.x && step.params?.y) {
+      case "tap":
+        if (step.params?.x && step.params?.y) {
           await this.robot.tap(step.params.x, step.params.y);
         }
+        break;
+
+      case "input":
+        if (step.params?.text) {
+          await this.robot.input(step.params.text);
+        }
+        break;
+
+      case "scroll":
+        if (step.params?.direction) {
+          await this.robot.scroll(
+            step.params.direction,
+            step.params.magnitude || 500
+          );
+        }
+        break;
+
+      default:
+        console.warn("Unknown step type:", step.type);
     }
   }
 
@@ -323,21 +327,6 @@ export class AgentCore {
     );
   }
 
-  private async handlePlan(step: TaskStep) {
-    const instruction = step.params?.instruction || step.description;
-    console.log(`   🧠 Planning sub-steps for: "${instruction}"...`);
-
-    // Call the text-based planner
-    const subSteps = await this.planner.plan(instruction);
-
-    if (subSteps && subSteps.length > 0) {
-      console.log(`      ➕ Inserting ${subSteps.length} planned steps.`);
-      this.taskManager.insertNextSteps(subSteps);
-    } else {
-      console.log("      ⚠️ No steps generated for this plan.");
-    }
-  }
-
   private async handleAnalyze(step: TaskStep) {
     const instruction = step.params?.instruction || step.description;
     console.log(`   🧠 Analyzing screen with instruction: "${instruction}"...`);
@@ -352,11 +341,26 @@ export class AgentCore {
     if (result.action_suggestion && result.action_suggestion.steps) {
       const nextSteps = result.action_suggestion.steps
         .filter((s: any) => s.action && s.action !== "END")
-        .map((s: any) => ({
-          type: s.action,
-          params: s,
-          description: s.description || ` visión suggested ${s.action}`,
-        }));
+        .map((s: any) => {
+          let stepParams = s.params || {};
+
+          // Robustness: Handle AI returning coordinate: [x, y] instead of x, y
+          if (s.action === "tap") {
+            if (stepParams.coordinate && Array.isArray(stepParams.coordinate)) {
+              stepParams.x = stepParams.coordinate[0];
+              stepParams.y = stepParams.coordinate[1];
+            } else if (Array.isArray(s.coordinate)) {
+              stepParams.x = s.coordinate[0];
+              stepParams.y = s.coordinate[1];
+            }
+          }
+
+          return {
+            type: s.action,
+            params: stepParams,
+            description: s.description || ` visión suggested ${s.action}`,
+          };
+        });
 
       if (nextSteps.length > 0) {
         console.log(
